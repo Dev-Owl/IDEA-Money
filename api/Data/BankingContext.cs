@@ -37,13 +37,13 @@ namespace BankingAPI.Data
                 entity.HasMany(e => e.Transactions)
                     .WithOne(e => e.Account)
                     .HasForeignKey(e => e.AccountId)
-                    .OnDelete(DeleteBehavior.SetNull);
+                    .OnDelete(DeleteBehavior.Cascade);
 
                 // Configure User-Account relationship
                 entity.HasOne(e => e.User)
                     .WithMany(e => e.Accounts)
                     .HasForeignKey(e => e.UserId)
-                    .OnDelete(DeleteBehavior.Cascade);
+                    .OnDelete(DeleteBehavior.Restrict);
             });
 
             // Configure Card entity

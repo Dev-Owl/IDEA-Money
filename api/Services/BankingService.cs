@@ -139,21 +139,64 @@ namespace BankingAPI.Services
         }
 
         /// <summary>
-        /// Delete an account and all associated data
+        /// Delete an account and all associated data (user, cards, transactions)
         /// </summary>
         public async Task<bool> DeleteAccountAsync(int accountId)
         {
             var account = await _context.Accounts
+                .Include(a => a.User)
                 .Include(a => a.Cards)
+                .ThenInclude(c => c.Transactions)
                 .Include(a => a.Transactions)
                 .FirstOrDefaultAsync(a => a.Id == accountId);
 
             if (account == null) return false;
 
-            _context.Accounts.Remove(account);
-            await _context.SaveChangesAsync();
+            using var transaction = await _context.Database.BeginTransactionAsync();
 
-            return true;
+            try
+            {
+                // Delete all card transactions
+                var cardTransactions = account.Cards.SelectMany(c => c.Transactions).ToList();
+                if (cardTransactions.Any())
+                {
+                    _context.Transactions.RemoveRange(cardTransactions);
+                }
+
+                // Delete all account transactions
+                if (account.Transactions.Any())
+                {
+                    _context.Transactions.RemoveRange(account.Transactions);
+                }
+
+                // Delete all cards
+                if (account.Cards.Any())
+                {
+                    _context.Cards.RemoveRange(account.Cards);
+                }
+
+                // Delete the account
+                _context.Accounts.Remove(account);
+
+                // Delete the associated user if this is their only account
+                var userAccountCount = await _context.Accounts.CountAsync(a => a.UserId == account.UserId && a.Id != accountId);
+                if (userAccountCount == 0 && account.User != null)
+                {
+                    _context.Users.Remove(account.User);
+                }
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                _logger.LogInformation("Successfully deleted account {AccountId} and all associated data", accountId);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Failed to delete account {AccountId}", accountId);
+                throw;
+            }
         }
 
         /// <summary>
